@@ -9,10 +9,17 @@ import { loadVaults } from "./config.js";
 import { listNotes, readNote } from "./vault.js";
 
 // BOOT 
-const server = new Server({
-  name: "obsidian-mcp",
-  version: "1.0.0",
-});
+const server = new Server(
+  {
+    name: "obsidian-mcp",
+    version: "1.0.0",
+  },
+  {
+    capabilities: {
+      tools: {}, // tells the SDK: yes, this server has tools
+    },
+  }
+);
 
 const vaults = await loadVaults();
 console.error(`Loaded ${vaults.length} vault(s)`);
