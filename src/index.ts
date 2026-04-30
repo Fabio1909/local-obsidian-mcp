@@ -6,7 +6,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 
 import { loadVaults } from "./config.js";
-import { listNotes, readNote, searchNotes } from "./vault.js";
+import { listNotes, readNote, searchNotes, createNote } from "./vault.js";
 
 // BOOT 
 const server = new Server(
@@ -96,6 +96,34 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
           },
           required: ["query"],
+        },
+      },
+
+      {
+        name: "create_note",
+        description:
+          "Creates a new markdown note in an Obsidian vault. " +
+          "Fails if a note with that name already exists. " +
+          "Use this when the user wants to save or write a new note.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            vault: {
+              type: "string",
+              description: "The vault name to write into.",
+            },
+            filename: {
+              type: "string",
+              description:
+                "Note filename without .md extension. " +
+                "Supports subfolders (e.g. 'projects/my-note').",
+            },
+            content: {
+              type: "string",
+              description: "The markdown content to write.",
+            },
+          },
+          required: ["vault", "filename", "content"],
         },
       },
 
@@ -196,6 +224,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return {
       content: [{ type: "text", text: lines.join("\n") }],
     };
+  }
+
+  if (name === "create_note") {
+    const vaultName = input.vault as string;
+    const filename = input.filename as string;
+    const content = input.content as string;
+
+    const target = vaults.find((v) => v.name === vaultName);
+
+    if (!target) {
+      return {
+        content: [{ type: "text", text: `No vault found with name "${vaultName}"` }],
+      };
+    }
+
+    try {
+      const path = await createNote(target, filename, content);
+      return {
+        content: [{ type: "text", text: `Note created: ${path}` }],
+      };
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code === "EEXIST") {
+        return {
+          content: [{ type: "text", text: `Note already exists: ${filename}` }],
+        };
+      }
+      throw err;
+    }
   }
 
   return {

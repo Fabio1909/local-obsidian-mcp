@@ -1,7 +1,7 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
-import { join, relative, extname, basename } from "node:path";
+import { join, relative, extname, basename, dirname } from "node:path";
 
 import { NoteInfo, VaultConfig, SearchResult } from "./types.js"
 
@@ -86,4 +86,18 @@ export async function searchNotes(
   }
 
   return results;
+}
+
+export async function createNote(
+  vault: VaultConfig,
+  filename: string,
+  content: string
+): Promise<string> {
+  const name = filename.endsWith(".md") ? filename : `${filename}.md`;
+  const fullPath = join(vault.path, name);
+
+  await mkdir(dirname(fullPath), { recursive: true });
+  await writeFile(fullPath, content, { encoding: "utf-8", flag: "wx" });
+
+  return fullPath;
 }
