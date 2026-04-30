@@ -11,8 +11,14 @@ export interface VaultsFile {
 
 // this one is for a single note in our vaults
 export interface NoteInfo {
-  name: string, // this will be the name of the note without the .md at the end 
-  path: string, // this will be the ABSOLUTE path of the note 
+  name: string, // this will be the name of the note without the .md at the end
+  path: string, // this will be the ABSOLUTE path of the note
   relativePath: string, // this will be the relative path wrt the root of the vault
+}
+
+// one search hit: the note that matched + the lines that contain the query
+export interface SearchResult {
+  note: NoteInfo;
+  matches: string[]; // empty when note matched by title only
 }
 

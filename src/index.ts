@@ -6,7 +6,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 
 import { loadVaults } from "./config.js";
-import { listNotes, readNote } from "./vault.js";
+import { listNotes, readNote, searchNotes } from "./vault.js";
 
 // BOOT 
 const server = new Server(
@@ -69,6 +69,36 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
 
+      {
+        name: "search_notes",
+        description:
+          "Searches Obsidian notes by keyword. Checks note titles by default. " +
+          "Set searchContent to true to also search inside note content. " +
+          "Use this when the user wants to find notes about a topic.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              description: "The keyword to search for (case-insensitive).",
+            },
+            vault: {
+              type: "string",
+              description: "Optional vault name to limit search scope.",
+            },
+            searchContent: {
+              type: "boolean",
+              description: "If true, also searches inside note content. Default: false.",
+            },
+            maxResults: {
+              type: "number",
+              description: "Max notes to return, and max matching lines per note. Default: 20.",
+            },
+          },
+          required: ["query"],
+        },
+      },
+
     ],
   };
 });
@@ -122,6 +152,49 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     return {
       content: [{ type: "text", text: content }],
+    };
+  }
+
+  if (name === "search_notes") {
+    const query = input.query as string;
+    const vaultFilter = input.vault as string | undefined;
+    const searchContent = (input.searchContent as boolean) ?? false;
+    const maxResults = (input.maxResults as number) ?? 20;
+
+    const targets = vaultFilter
+      ? vaults.filter((v) => v.name === vaultFilter)
+      : vaults;
+
+    if (targets.length === 0) {
+      return {
+        content: [{ type: "text", text: `No vault found with name "${vaultFilter}"` }],
+      };
+    }
+
+    const lines: string[] = [];
+
+    for (const vault of targets) {
+      const results = await searchNotes(vault, query, searchContent, maxResults);
+
+      if (results.length > 0) {
+        lines.push(`\n## ${vault.name}\n`);
+        for (const result of results) {
+          lines.push(`- ${result.note.relativePath}  →  ${result.note.path}`);
+          for (const match of result.matches) {
+            lines.push(`  > ${match.trim()}`);
+          }
+        }
+      }
+    }
+
+    if (lines.length === 0) {
+      return {
+        content: [{ type: "text", text: `No notes found matching "${query}"` }],
+      };
+    }
+
+    return {
+      content: [{ type: "text", text: lines.join("\n") }],
     };
   }
 
