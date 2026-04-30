@@ -6,7 +6,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 
 import { loadVaults } from "./config.js";
-import { listNotes, readNote, searchNotes, createNote } from "./vault.js";
+import { listNotes, readNote, searchNotes, createNote, commitVault } from "./vault.js";
 
 // BOOT 
 const server = new Server(
@@ -124,6 +124,28 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
           },
           required: ["vault", "filename", "content"],
+        },
+      },
+
+      {
+        name: "commit_vault",
+        description:
+          "Commits all pending changes in an Obsidian vault's git repository. " +
+          "Stages everything (git add -A) then commits with the provided message. " +
+          "Use this after creating or modifying notes to save changes to git.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            vault: {
+              type: "string",
+              description: "The vault name to commit changes in.",
+            },
+            message: {
+              type: "string",
+              description: "The git commit message.",
+            },
+          },
+          required: ["vault", "message"],
         },
       },
 
@@ -251,6 +273,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
       throw err;
+    }
+  }
+
+  if (name === "commit_vault") {
+    const vaultName = input.vault as string;
+    const message = input.message as string;
+
+    const target = vaults.find((v) => v.name === vaultName);
+
+    if (!target) {
+      return {
+        content: [{ type: "text", text: `No vault found with name "${vaultName}"` }],
+      };
+    }
+
+    try {
+      const output = await commitVault(target, message);
+      return {
+        content: [{ type: "text", text: output || "Committed successfully." }],
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        content: [{ type: "text", text: `Git error: ${msg}` }],
+      };
     }
   }
 

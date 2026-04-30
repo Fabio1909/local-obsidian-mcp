@@ -1,9 +1,17 @@
 import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
+import { execFile as execFileCb } from "node:child_process";
+import { promisify } from "node:util";
+const execFile = promisify(execFileCb);
 import { join, relative, extname, basename, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { NoteInfo, VaultConfig, SearchResult } from "./types.js"
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const COMMIT_SCRIPT = join(__dirname, "..", "scripts", "git-commit-vault.sh");
 
 async function walkDir(
   rootPath: string,
@@ -100,4 +108,9 @@ export async function createNote(
   await writeFile(fullPath, content, { encoding: "utf-8", flag: "wx" });
 
   return fullPath;
+}
+
+export async function commitVault(vault: VaultConfig, message: string): Promise<string> {
+  const { stdout } = await execFile("bash", [COMMIT_SCRIPT, vault.path, message]);
+  return stdout;
 }
