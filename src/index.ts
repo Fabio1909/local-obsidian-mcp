@@ -6,7 +6,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 
 import { loadVaults } from "./config.js";
-import { listNotes, readNote } from "./vault.js";
+import { listNotes, readNote, searchNotes, createNote, commitVault } from "./vault.js";
 
 // BOOT 
 const server = new Server(
@@ -69,6 +69,86 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
 
+      {
+        name: "search_notes",
+        description:
+          "Searches Obsidian notes by keyword. Checks note titles by default. " +
+          "Set searchContent to true to also search inside note content. " +
+          "Use this when the user wants to find notes about a topic.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              description: "The keyword to search for (case-insensitive).",
+            },
+            vault: {
+              type: "string",
+              description: "Optional vault name to limit search scope.",
+            },
+            searchContent: {
+              type: "boolean",
+              description: "If true, also searches inside note content. Default: false.",
+            },
+            maxResults: {
+              type: "number",
+              description: "Max notes to return, and max matching lines per note. Default: 20.",
+            },
+          },
+          required: ["query"],
+        },
+      },
+
+      {
+        name: "create_note",
+        description:
+          "Creates a new markdown note in an Obsidian vault. " +
+          "Fails if a note with that name already exists. " +
+          "Use this when the user wants to save or write a new note.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            vault: {
+              type: "string",
+              description: "The vault name to write into.",
+            },
+            filename: {
+              type: "string",
+              description:
+                "Note filename without .md extension. " +
+                "Supports subfolders (e.g. 'projects/my-note').",
+            },
+            content: {
+              type: "string",
+              description: "The markdown content to write.",
+            },
+          },
+          required: ["vault", "filename", "content"],
+        },
+      },
+
+      {
+        name: "commit_vault",
+        description:
+          "Commits all pending changes in an Obsidian vault's git repository. " +
+          "Stages everything (git add -A) then commits with the provided message. " +
+          "Use this after creating or modifying notes to save changes to git.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            vault: {
+              type: "string",
+              description: "The vault name to commit changes in.",
+            },
+            message: {
+              type: "string",
+              description: "The git commit message.",
+            },
+          },
+          required: ["vault", "message"],
+        },
+      },
+
     ],
   };
 });
@@ -123,6 +203,102 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return {
       content: [{ type: "text", text: content }],
     };
+  }
+
+  if (name === "search_notes") {
+    const query = input.query as string;
+    const vaultFilter = input.vault as string | undefined;
+    const searchContent = (input.searchContent as boolean) ?? false;
+    const maxResults = (input.maxResults as number) ?? 20;
+
+    const targets = vaultFilter
+      ? vaults.filter((v) => v.name === vaultFilter)
+      : vaults;
+
+    if (targets.length === 0) {
+      return {
+        content: [{ type: "text", text: `No vault found with name "${vaultFilter}"` }],
+      };
+    }
+
+    const lines: string[] = [];
+
+    for (const vault of targets) {
+      const results = await searchNotes(vault, query, searchContent, maxResults);
+
+      if (results.length > 0) {
+        lines.push(`\n## ${vault.name}\n`);
+        for (const result of results) {
+          lines.push(`- ${result.note.relativePath}  →  ${result.note.path}`);
+          for (const match of result.matches) {
+            lines.push(`  > ${match.trim()}`);
+          }
+        }
+      }
+    }
+
+    if (lines.length === 0) {
+      return {
+        content: [{ type: "text", text: `No notes found matching "${query}"` }],
+      };
+    }
+
+    return {
+      content: [{ type: "text", text: lines.join("\n") }],
+    };
+  }
+
+  if (name === "create_note") {
+    const vaultName = input.vault as string;
+    const filename = input.filename as string;
+    const content = input.content as string;
+
+    const target = vaults.find((v) => v.name === vaultName);
+
+    if (!target) {
+      return {
+        content: [{ type: "text", text: `No vault found with name "${vaultName}"` }],
+      };
+    }
+
+    try {
+      const path = await createNote(target, filename, content);
+      return {
+        content: [{ type: "text", text: `Note created: ${path}` }],
+      };
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code === "EEXIST") {
+        return {
+          content: [{ type: "text", text: `Note already exists: ${filename}` }],
+        };
+      }
+      throw err;
+    }
+  }
+
+  if (name === "commit_vault") {
+    const vaultName = input.vault as string;
+    const message = input.message as string;
+
+    const target = vaults.find((v) => v.name === vaultName);
+
+    if (!target) {
+      return {
+        content: [{ type: "text", text: `No vault found with name "${vaultName}"` }],
+      };
+    }
+
+    try {
+      const output = await commitVault(target, message);
+      return {
+        content: [{ type: "text", text: output || "Committed successfully." }],
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        content: [{ type: "text", text: `Git error: ${msg}` }],
+      };
+    }
   }
 
   return {
